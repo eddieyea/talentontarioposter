@@ -5,6 +5,7 @@ build_poster()     → 朋友圈 vertical poster (per-program PSD)
 build_xhs_poster() → 小红书 square poster (single shared template)
 """
 from pathlib import Path
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from psd_tools import PSDImage
 from psd_tools.api.layers import TypeLayer
@@ -25,6 +26,12 @@ XHS_FONT_SIZE = 241
 XHS_TITLE_BG_COLOR = (117, 22, 30)
 
 TEXT_WHITE = (255, 255, 255)
+
+# Canada flag anchor point measured from human-created reference poster
+# (all values in 朋友圈 poster pixel coordinates, relative to 矩形 1 frame top-left)
+_FLAG_TARGET_X = 52    # flag left edge from frame left
+_FLAG_TARGET_Y = 90    # flag top edge from frame top
+_FLAG_TARGET_H = 59    # flag bounding-box height (drives letter scale)
 
 # Programs whose poster title should read "签证捷报" instead of "移民捷报"
 VISA_PROGRAMS = {"境内学签", "境外学签", "境外工签", "澳洲签证"}
@@ -72,18 +79,52 @@ def _find_watermark_layer(psd):
     return None, None
 
 
+def _find_flag_in_letter(letter: Image.Image):
+    """Return (y_top, x_left, height) of the Canada maple-leaf flag red pixels in the letter."""
+    arr = np.array(letter)
+    # Search only top-left quadrant — the flag is always top-left in IRCC letters
+    roi = arr[:letter.height // 4, :letter.width // 4]
+    red = (roi[:, :, 0] > 160) & (roi[:, :, 1] < 60) & (roi[:, :, 2] < 60)
+    ys = np.where(red.any(axis=1))[0]
+    xs = np.where(red.any(axis=0))[0]
+    if len(ys) > 1 and len(xs):
+        return int(ys[0]), int(xs[0]), int(ys[-1] - ys[0])
+    # Fallback values measured from a standard IRCC letter at 300 DPI
+    return 58, 268, 63
+
+
 def _paste_letter(canvas: Image.Image, frame_bbox: tuple, letter_image: Image.Image,
                   watermark=None, watermark_bbox=None):
     x0, y0, x1, y1 = frame_bbox
     fw, fh = x1 - x0, y1 - y0
 
-    # Scale uniformly by width so the full letter is visible (reference shows whole letter)
-    scale = fw / letter_image.width
-    scaled_h = int(letter_image.height * scale)
-    scaled = letter_image.resize((fw, scaled_h), Image.LANCZOS)
-    # Paste at top of frame; if letter is shorter than frame, the template background shows below
-    paste_h = min(scaled_h, fh)
-    canvas.paste(scaled.crop((0, 0, fw, paste_h)).convert(canvas.mode), (x0, y0))
+    # Detect flag position and size in the letter image
+    flag_y, flag_x, flag_h = _find_flag_in_letter(letter_image)
+
+    # Scale letter so the flag matches the reference target height
+    scale = _FLAG_TARGET_H / flag_h if flag_h > 0 else 1.0
+    new_w = int(letter_image.width * scale)
+    new_h = int(letter_image.height * scale)
+    scaled = letter_image.resize((new_w, new_h), Image.LANCZOS)
+
+    # Compute paste position: flag should land at (x0+_FLAG_TARGET_X, y0+_FLAG_TARGET_Y)
+    paste_x = x0 + _FLAG_TARGET_X - int(flag_x * scale)
+    paste_y = y0 + _FLAG_TARGET_Y - int(flag_y * scale)
+
+    # Fill entire frame with white first (covers any PSD background peeking through gaps)
+    canvas_draw = ImageDraw.Draw(canvas)
+    canvas_draw.rectangle([x0, y0, x1, y1], fill=(255, 255, 255))
+
+    # Crop the scaled letter to only the part that falls inside the frame and paste
+    src_x0 = max(0, x0 - paste_x)
+    src_y0 = max(0, y0 - paste_y)
+    src_x1 = min(new_w, x1 - paste_x)
+    src_y1 = min(new_h, y1 - paste_y)
+    if src_x1 > src_x0 and src_y1 > src_y0:
+        region = scaled.crop((src_x0, src_y0, src_x1, src_y1))
+        dest_x = max(x0, paste_x)
+        dest_y = max(y0, paste_y)
+        canvas.paste(region.convert(canvas.mode), (dest_x, dest_y))
     # Re-apply watermark on top of the pasted letter
     if watermark and watermark_bbox:
         wm = watermark.convert("RGBA")
