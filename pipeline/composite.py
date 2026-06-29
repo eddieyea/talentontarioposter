@@ -75,21 +75,27 @@ def _find_watermark_layer(psd):
 def _paste_letter(canvas: Image.Image, frame_bbox: tuple, letter_image: Image.Image,
                   watermark=None, watermark_bbox=None):
     x0, y0, x1, y1 = frame_bbox
-    resized = letter_image.resize((x1 - x0, y1 - y0), Image.LANCZOS)
+    fw, fh = x1 - x0, y1 - y0
+    resized = letter_image.resize((fw, fh), Image.LANCZOS)
     canvas.paste(resized.convert(canvas.mode), (x0, y0))
     # Re-apply watermark on top of the pasted letter
     if watermark and watermark_bbox:
         wm = watermark.convert("RGBA")
-        # Reduce opacity to ~40%
+        # Scale watermark proportionally to frame size if it came from a different PSD
+        wm_src_w = watermark_bbox[2] - watermark_bbox[0]
+        wm_src_h = watermark_bbox[3] - watermark_bbox[1]
+        scale = min(fw / wm_src_w, fh / wm_src_h) if wm_src_w > fw or wm_src_h > fh else 1.0
+        if scale != 1.0:
+            wm = wm.resize((int(wm.width * scale), int(wm.height * scale)), Image.LANCZOS)
         r, g, b, a = wm.split()
-        a = a.point(lambda p: int(p * 0.18))
+        a = a.point(lambda p: int(p * 0.35))
         wm = Image.merge("RGBA", (r, g, b, a))
-        wx0, wy0 = watermark_bbox[0], watermark_bbox[1]
-        # alpha_composite requires RGBA canvas; convert, composite, convert back
+        # Centre watermark within the frame
+        wx0 = x0 + (fw - wm.width) // 2
+        wy0 = y0 + (fh - wm.height) // 2
         canvas_rgba = canvas.convert("RGBA")
         canvas_rgba.alpha_composite(wm, dest=(wx0, wy0))
-        result = canvas_rgba.convert(canvas.mode)
-        canvas.paste(result)
+        canvas.paste(canvas_rgba.convert(canvas.mode))
 
 
 def _fit_font(text: str, max_w: int, max_h: int, start_size: int) -> ImageFont.FreeTypeFont:
@@ -157,6 +163,14 @@ def build_poster(
 # ── 小红书 poster ──────────────────────────────────────────────────────────────
 
 XHS_TEMPLATE = "小红书捷报模板.psd"
+# Borrow watermark from this 朋友圈 PSD (all share the same 白底logo layer)
+_WATERMARK_SOURCE_PSD = "境内学签.psd"
+
+
+def _get_standalone_watermark():
+    """Extract watermark layer from a 朋友圈 PSD and return (image, bbox)."""
+    psd = PSDImage.open(str(TEMPLATES_DIR / _WATERMARK_SOURCE_PSD))
+    return _find_watermark_layer(psd)
 
 
 def build_xhs_poster(
@@ -176,9 +190,12 @@ def build_xhs_poster(
 
     canvas = psd.composite()
 
-    # Paste letter first (behind title overlay)
+    # Get watermark from 朋友圈 PSD and scale it to fit the 小红书 frame
+    wm_img, wm_bbox = _get_standalone_watermark()
+
+    # Paste letter with watermark
     if frame_bbox:
-        _paste_letter(canvas, frame_bbox, letter_image)
+        _paste_letter(canvas, frame_bbox, letter_image, wm_img, wm_bbox)
 
     # Overwrite title with correct wording
     if title_bbox:

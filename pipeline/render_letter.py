@@ -5,7 +5,7 @@ import fitz
 from PIL import Image, ImageDraw
 
 PII_CONFIG = Path(__file__).parent.parent / "config" / "pii_regions.json"
-MASK_COLOR = (176, 176, 176)  # #B0B0B0 grey
+MASK_COLOR = (213, 213, 213)  # #D5D5D5 light grey
 
 
 def render_and_mask(pdf_path: str, dpi: int = 300) -> Image.Image:
