@@ -6,7 +6,7 @@ import fitz
 from PIL import Image, ImageDraw
 
 PII_CONFIG = Path(__file__).parent.parent / "config" / "pii_regions.json"
-MASK_COLOR = (213, 213, 213)  # #D5D5D5 light grey
+MASK_COLOR = (232, 232, 232)  # #E8E8E8 light grey (matched to reference)
 
 # Pixels above the Canada flag to keep as top margin (matches designer's reference placement)
 FLAG_TOP_MARGIN_PX = 57  # at 300 DPI: flag lands 57px from top of cropped image

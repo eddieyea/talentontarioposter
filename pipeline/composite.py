@@ -135,10 +135,10 @@ def _paste_letter(canvas: Image.Image, frame_bbox: tuple, letter_image: Image.Im
         if scale != 1.0:
             wm = wm.resize((int(wm.width * scale), int(wm.height * scale)), Image.LANCZOS)
         r, g, b, a = wm.split()
-        a = a.point(lambda p: int(p * 0.35))
+        a = a.point(lambda p: int(p * 0.50))
         wm = Image.merge("RGBA", (r, g, b, a))
-        # Centre watermark within the frame
-        wx0 = x0 + (fw - wm.width) // 2
+        # Position watermark: centre-x at 69.2% of frame width (from reference), centre-y at 50%
+        wx0 = x0 + int(fw * 0.692) - wm.width // 2
         wy0 = y0 + (fh - wm.height) // 2
         canvas_rgba = canvas.convert("RGBA")
         canvas_rgba.alpha_composite(wm, dest=(wx0, wy0))

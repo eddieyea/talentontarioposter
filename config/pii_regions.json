@@ -6,6 +6,6 @@
     {"name": "appno_number",      "x0": 364, "y0": 141, "x1": 424, "y1": 160},
     {"name": "barcode_right",     "x0": 364, "y0": 164, "x1": 498, "y1": 197},
     {"name": "name_address",      "x0": 108, "y0": 219, "x1": 310, "y1": 278},
-    {"name": "document_number",   "x0": 382, "y0": 614, "x1": 442, "y1": 631}
+    {"name": "document_number",   "x0": 385, "y0": 617, "x1": 440, "y1": 630}
   ]
 }
