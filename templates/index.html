@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>移民捷报生成器</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f5f5f7;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+      padding: 40px 48px;
+      width: 100%;
+      max-width: 520px;
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      color: #888;
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #444;
+      margin-bottom: 6px;
+    }
+    .field { margin-bottom: 20px; }
+    input[type="text"], select {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      font-size: 15px;
+      color: #1a1a1a;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus, select:focus { border-color: #c0392b; }
+    .drop-zone {
+      border: 2px dashed #ddd;
+      border-radius: 10px;
+      padding: 28px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .drop-zone.drag-over { border-color: #c0392b; background: #fff5f5; }
+    .drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .drop-icon { font-size: 32px; margin-bottom: 8px; }
+    .drop-text { font-size: 14px; color: #888; }
+    .drop-text strong { color: #c0392b; }
+    .file-name { font-size: 13px; color: #c0392b; margin-top: 8px; font-weight: 500; }
+    button[type="submit"] {
+      width: 100%;
+      padding: 13px;
+      background: #c0392b;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.2s;
+    }
+    button[type="submit"]:hover { background: #a93226; }
+    button[type="submit"]:disabled { background: #ccc; cursor: not-allowed; }
+    .status {
+      margin-top: 16px;
+      font-size: 14px;
+      color: #888;
+      text-align: center;
+      min-height: 20px;
+    }
+    .status.error { color: #c0392b; }
+    .status.success { color: #27ae60; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>移民捷报生成器</h1>
+    <p class="subtitle">上传获批信，自动生成朋友圈海报</p>
+
+    <form id="posterForm">
+      <div class="field">
+        <label>上传获批信 PDF</label>
+        <div class="drop-zone" id="dropZone">
+          <input type="file" name="pdf" id="pdfInput" accept=".pdf" required>
+          <div class="drop-icon">📄</div>
+          <div class="drop-text">拖拽文件到此，或 <strong>点击选择</strong></div>
+          <div class="file-name" id="fileName"></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>客户姓名（用于海报显示）</label>
+        <input type="text" name="client_name" placeholder="例：S先生 / L女士" required>
+      </div>
+
+      <div class="field">
+        <label>移民项目</label>
+        <select name="program" required>
+          <option value="" disabled selected>请选择项目</option>
+          {% for p in programs %}
+          <option value="{{ p }}">{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button type="submit" id="submitBtn">生成海报</button>
+      <div class="status" id="status"></div>
+    </form>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const pdfInput = document.getElementById('pdfInput');
+    const fileName = document.getElementById('fileName');
+
+    pdfInput.addEventListener('change', () => {
+      fileName.textContent = pdfInput.files[0]?.name || '';
+    });
+
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type === 'application/pdf') {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        pdfInput.files = dt.files;
+        fileName.textContent = file.name;
+      }
+    });
+
+    document.getElementById('posterForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      const status = document.getElementById('status');
+      btn.disabled = true;
+      btn.textContent = '生成中…';
+      status.textContent = '正在处理，请稍候…';
+      status.className = 'status';
+
+      const formData = new FormData(e.target);
+      try {
+        const res = await fetch('/generate', { method: 'POST', body: formData });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || '生成失败');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const cd = res.headers.get('Content-Disposition') || '';
+        const match = cd.match(/filename\*?=(?:UTF-8'')?["']?([^"';\n]+)/i);
+        a.download = match ? decodeURIComponent(match[1]) : '移民捷报.png';
+        a.href = url;
+        a.click();
+        URL.revokeObjectURL(url);
+        status.textContent = '✅ 海报已下载！';
+        status.className = 'status success';
+      } catch (err) {
+        status.textContent = '❌ ' + err.message;
+        status.className = 'status error';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '生成海报';
+      }
+    });
+  </script>
+</body>
+</html>

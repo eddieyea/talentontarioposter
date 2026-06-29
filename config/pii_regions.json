@@ -1,0 +1,11 @@
+{
+  "_comment": "Regions to grey-box in PDF coordinates (612x792 pt page). Individual boxes per PII field.",
+  "ircc_standard": [
+    {"name": "uci_number",         "x0": 134, "y0": 140, "x1": 290, "y1": 162},
+    {"name": "barcode_left",       "x0": 120, "y0": 162, "x1": 300, "y1": 200},
+    {"name": "appno_number",       "x0": 366, "y0": 140, "x1": 530, "y1": 162},
+    {"name": "barcode_right",      "x0": 350, "y0": 162, "x1": 530, "y1": 200},
+    {"name": "name_address",       "x0": 108, "y0": 218, "x1": 360, "y1": 282},
+    {"name": "document_number",    "x0": 383, "y0": 612, "x1": 546, "y1": 634}
+  ]
+}
