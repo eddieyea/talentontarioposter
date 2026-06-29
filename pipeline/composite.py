@@ -98,11 +98,11 @@ def _paste_letter(canvas: Image.Image, frame_bbox: tuple, letter_image: Image.Im
     x0, y0, x1, y1 = frame_bbox
     fw, fh = x1 - x0, y1 - y0
 
-    # Detect flag position and size in the letter image
+    # Detect flag position in the letter image
     flag_y, flag_x, flag_h = _find_flag_in_letter(letter_image)
 
-    # Scale letter so the flag matches the reference target height
-    scale = _FLAG_TARGET_H / flag_h if flag_h > 0 else 1.0
+    # Scale letter to fill the frame height (reference covers ~99.5% of frame)
+    scale = fh / letter_image.height
     new_w = int(letter_image.width * scale)
     new_h = int(letter_image.height * scale)
     scaled = letter_image.resize((new_w, new_h), Image.LANCZOS)
