@@ -76,8 +76,15 @@ def _paste_letter(canvas: Image.Image, frame_bbox: tuple, letter_image: Image.Im
                   watermark=None, watermark_bbox=None):
     x0, y0, x1, y1 = frame_bbox
     fw, fh = x1 - x0, y1 - y0
-    resized = letter_image.resize((fw, fh), Image.LANCZOS)
-    canvas.paste(resized.convert(canvas.mode), (x0, y0))
+
+    # Scale uniformly by height so aspect ratio is preserved, then crop right
+    # This keeps the Canada flag anchored at top-left with no distortion
+    scale = fh / letter_image.height
+    scaled_w = int(letter_image.width * scale)
+    scaled = letter_image.resize((scaled_w, fh), Image.LANCZOS)
+    # Crop to frame width from the left (right margin is white space in IRCC letters)
+    cropped = scaled.crop((0, 0, fw, fh))
+    canvas.paste(cropped.convert(canvas.mode), (x0, y0))
     # Re-apply watermark on top of the pasted letter
     if watermark and watermark_bbox:
         wm = watermark.convert("RGBA")
