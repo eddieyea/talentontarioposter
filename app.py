@@ -69,6 +69,8 @@ def generate():
             as_attachment=True,
             download_name=f"{title_word}_{safe_name}_{program}.zip",
         )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     finally:
         os.unlink(tmp_path)
 
