@@ -9,7 +9,7 @@ from flask import Flask, jsonify, render_template, request, send_file
 
 from pipeline.parse_date import extract_issue_date
 from pipeline.render_letter import render_and_mask
-from pipeline.composite import build_poster, build_xhs_poster
+from pipeline.composite import build_poster, build_xhs_poster, VISA_PROGRAMS
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 20 MB
@@ -53,20 +53,21 @@ def generate():
 
         # Pack both into a ZIP
         safe_name = client_name.replace(" ", "_")
+        title_word = "签证捷报" if program in VISA_PROGRAMS else "移民捷报"
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for img, label in ((wechat, "朋友圈"), (xhs, "小红书")):
                 img_buf = io.BytesIO()
                 img.save(img_buf, format="PNG", optimize=False)
                 img_buf.seek(0)
-                zf.writestr(f"移民捷报_{safe_name}_{program}_{label}.png", img_buf.read())
+                zf.writestr(f"{title_word}_{safe_name}_{program}_{label}.png", img_buf.read())
 
         zip_buf.seek(0)
         return send_file(
             zip_buf,
             mimetype="application/zip",
             as_attachment=True,
-            download_name=f"移民捷报_{safe_name}_{program}.zip",
+            download_name=f"{title_word}_{safe_name}_{program}.zip",
         )
     finally:
         os.unlink(tmp_path)

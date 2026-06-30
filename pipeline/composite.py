@@ -17,8 +17,8 @@ FONT_PATH = ASSETS_DIR / "SourceHanSansSC-Bold.otf"
 FRAME_LAYER_NAME = "矩形 1"
 LABEL_TEXTS = {"客户姓名", "移民项目", "获批时间", "目的地"}
 
-# 朋友圈 info bar: 52pt at 200 DPI → 144px
-WECHAT_FONT_SIZE = 144
+# 朋友圈 info bar: target ~173px in poster (matched to reference)
+WECHAT_FONT_SIZE = 173
 WECHAT_BAR_COLOR = (187, 26, 39)
 
 # 小红书 title: 115.5pt at 150 DPI → 241px
@@ -35,6 +35,44 @@ _FLAG_TARGET_H = 59    # flag bounding-box height (drives letter scale)
 
 # Programs whose poster title should read "签证捷报" instead of "移民捷报"
 VISA_PROGRAMS = {"境内学签", "境外学签", "境外工签", "澳洲签证"}
+
+# Display text overrides for the 移民项目 info bar slot.
+# U+3000 (ideographic space) is used for 省提名 so it renders at the same
+# font size as a 4-character CJK string (each U+3000 = one full CJK-width).
+PROGRAM_BAR_DISPLAY = {
+    "获批信配偶担保": "配偶担保",
+    "配偶担保（邮件版）": "配偶担保",
+    "获批信EE": "EE获批",
+    "省提名": "省提名　",              # trailing ideographic space → 4-char width
+    "安省省提名-EE+600分": "EE+600",
+    "技工省提名": "技工获批",
+    "优才计划省提名-EE加分": "EE加分",
+}
+
+# Starting font size for the 移民项目 bar slot, capped to what a standard
+# 4-char CJK program name (e.g. 境外学签) produces at max_w=524 (≈129px).
+# This prevents short mixed ASCII/CJK strings from rendering oversized.
+WECHAT_BAR_PROGRAM_FONT_SIZE = 129
+
+
+def _find_group_left_x(psd, group_name: str):
+    """Return the leftmost x of any non-value child layer inside the named group."""
+    def walk(layers):
+        for layer in layers:
+            if layer.name == group_name and hasattr(layer, '__iter__'):
+                xs = []
+                for child in layer:
+                    # Skip value TypeLayers (text ≠ group label name)
+                    if isinstance(child, TypeLayer) and child.text not in LABEL_TEXTS:
+                        continue
+                    b = child.bbox
+                    xs.append(b.left if hasattr(b, 'left') else b[0])
+                return min(xs) if xs else None
+            if hasattr(layer, '__iter__'):
+                r = walk(layer)
+                if r is not None:
+                    return r
+    return walk(psd)
 
 
 def _collect_text_layers(psd) -> dict:
@@ -125,34 +163,26 @@ def _paste_letter(canvas: Image.Image, frame_bbox: tuple, letter_image: Image.Im
         dest_x = max(x0, paste_x)
         dest_y = max(y0, paste_y)
         canvas.paste(region.convert(canvas.mode), (dest_x, dest_y))
-    # Re-apply watermark on top of the pasted letter
+    # Re-apply watermark at its PSD-native canvas position.
+    # The layer's pixel alpha is already pre-multiplied with the PSD layer opacity (~20%),
+    # so we use it as-is without further reduction.
     if watermark and watermark_bbox:
         wm = watermark.convert("RGBA")
-        # Scale watermark proportionally to frame size if it came from a different PSD
-        wm_src_w = watermark_bbox[2] - watermark_bbox[0]
-        wm_src_h = watermark_bbox[3] - watermark_bbox[1]
-        scale = min(fw / wm_src_w, fh / wm_src_h) if wm_src_w > fw or wm_src_h > fh else 1.0
-        if scale != 1.0:
-            wm = wm.resize((int(wm.width * scale), int(wm.height * scale)), Image.LANCZOS)
-        r, g, b, a = wm.split()
-        a = a.point(lambda p: int(p * 0.50))
-        wm = Image.merge("RGBA", (r, g, b, a))
-        # Position watermark: centre-x at 69.2% of frame width (from reference), centre-y at 50%
-        wx0 = x0 + int(fw * 0.692) - wm.width // 2
-        wy0 = y0 + (fh - wm.height) // 2
+        wb_x = watermark_bbox[0] if isinstance(watermark_bbox, tuple) else watermark_bbox.left
+        wb_y = watermark_bbox[1] if isinstance(watermark_bbox, tuple) else watermark_bbox.top
         canvas_rgba = canvas.convert("RGBA")
-        canvas_rgba.alpha_composite(wm, dest=(wx0, wy0))
+        canvas_rgba.alpha_composite(wm, dest=(wb_x, wb_y))
         canvas.paste(canvas_rgba.convert(canvas.mode))
 
 
 def _fit_font(text: str, max_w: int, max_h: int, start_size: int) -> ImageFont.FreeTypeFont:
-    """Return the largest font that fits text within max_w × max_h."""
+    """Return the largest font whose rendered width fits within max_w."""
     size = start_size
     dummy = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     while size > 8:
         font = ImageFont.truetype(str(FONT_PATH), size)
         _, _, tw, th = dummy.textbbox((0, 0), text, font=font)
-        if tw <= max_w and th <= max_h:
+        if tw <= max_w:
             return font
         size -= 4
     return ImageFont.truetype(str(FONT_PATH), 8)
@@ -163,20 +193,47 @@ def _draw_text_over(
     bbox: tuple,
     text: str,
     font: ImageFont.FreeTypeFont,
-    bg_color: tuple,
+    bg_color,           # tuple or None — None = no background fill
     autofit: bool = False,
 ):
-    """Fill bbox with bg_color then draw text vertically centred, left-aligned."""
+    """Optionally fill bbox with bg_color then draw text bottom-aligned, left-aligned."""
     draw = ImageDraw.Draw(canvas)
     x0, y0, x1, y1 = bbox
-    draw.rectangle([x0, y0, x1, y1], fill=bg_color)
+    if bg_color is not None:
+        draw.rectangle([x0, y0, x1, y1], fill=bg_color)
     if autofit:
         font = _fit_font(text, x1 - x0, y1 - y0, font.size)
     _, _, tw, th = draw.textbbox((0, 0), text, font=font)
-    draw.text((x0, y0 + (y1 - y0 - th) // 2), text, font=font, fill=TEXT_WHITE)
+    text_y = y1 - th
+    # Extend background upward to fully cover the text if it overflows above y0
+    if bg_color is not None and text_y < y0:
+        draw.rectangle([x0, text_y, x1, y0], fill=bg_color)
+    # Bottom-align: anchor text bottom at y1; text grows upward if larger than bbox
+    draw.text((x0, text_y), text, font=font, fill=TEXT_WHITE)
 
 
 # ── 朋友圈 poster ─────────────────────────────────────────────────────────────
+
+def _hide_value_layers(psd):
+    """Hide only the value TypeLayers inside the info bar groups before compositing.
+
+    Targets only direct TypeLayer children of groups named '客户姓名', '移民项目',
+    '获批时间' whose text differs from the group name (i.e. they are value layers,
+    not label layers).  All other TypeLayers (title, footer, etc.) are left alone.
+    """
+    INFO_BAR_GROUPS = {"客户姓名", "移民项目", "获批时间"}
+
+    def walk(layers):
+        for layer in layers:
+            if getattr(layer, 'name', '') in INFO_BAR_GROUPS and hasattr(layer, '__iter__'):
+                for child in layer:
+                    if isinstance(child, TypeLayer) and child.text != layer.name:
+                        child.visible = False
+            elif hasattr(layer, '__iter__') and not isinstance(layer, TypeLayer):
+                walk(layer)
+
+    walk(psd)
+
 
 def build_poster(
     psd_filename: str,
@@ -190,16 +247,67 @@ def build_poster(
     text_bboxes = _collect_text_layers(psd)
     frame_bbox = _find_frame_bbox(psd)
     watermark, watermark_bbox = _find_watermark_layer(psd)
-    canvas = psd.composite()
 
-    font = ImageFont.truetype(str(FONT_PATH), WECHAT_FONT_SIZE)
-    for group_name, new_text in (
-        ("客户姓名", client_name),
-        ("移民项目", program_name),
-        ("获批时间", approved_date),
+    # Hide stored value text so composite() renders a clean slate for Pillow to draw on.
+    # Also hide the title TypeLayer for VISA_PROGRAMS so we can draw 签证捷报 on top.
+    _hide_value_layers(psd)
+    title_bbox_wechat = None
+    if program_name in VISA_PROGRAMS:
+        for layer in psd.descendants():
+            if isinstance(layer, TypeLayer) and layer.text == "移民捷报" \
+                    and layer.bbox[2] < psd.width:
+                layer.visible = False
+                title_bbox_wechat = layer.bbox
+                break
+    canvas = psd.composite()
+    label_composite = canvas.copy()  # labels/decorators only; used to restore z-order below
+
+    # max_w: value must not reach next section's accent bar.
+    # 客户姓名 value x0=573 → 移民项目 accent bar x=983 → room=410, use 380 (30px pad)
+    # 移民项目 value x0=1353 → 获批时间 accent bar x=1907 → room=554, use 524 (30px pad)
+    # 获批时间 value x0=2389 → canvas right=3195 → room=806, capped at 670 so date
+    #   renders at ~120px matching the other two sections (656px wide at 120px)
+    date_grp_x = _find_group_left_x(psd, "获批时间") or 1907
+    prog_val_x0 = text_bboxes["移民项目"][0] if "移民项目" in text_bboxes else 1353
+
+    bar_program = PROGRAM_BAR_DISPLAY.get(program_name, program_name)
+
+    # Draw 客户姓名 and 获批时间 normally
+    for group_name, new_text, bg, max_w, start_size in (
+        ("客户姓名", client_name,   WECHAT_BAR_COLOR, 380, WECHAT_FONT_SIZE),
+        ("获批时间", approved_date, None,              670, WECHAT_FONT_SIZE),
     ):
         if group_name in text_bboxes:
-            _draw_text_over(canvas, text_bboxes[group_name], new_text, font, WECHAT_BAR_COLOR, autofit=True)
+            bbox = text_bboxes[group_name]
+            font = _fit_font(new_text, max_w, bbox[3] - bbox[1], start_size)
+            _draw_text_over(canvas, bbox, new_text, font, bg, autofit=False)
+
+    # Draw 移民项目: left-aligned at value x0, max_w = full section width up to
+    # 获批时间 group left edge (no padding) so the font is as large as possible.
+    # Background fill not needed — value TypeLayers are hidden so PSD bar is already red.
+    if "移民项目" in text_bboxes:
+        bbox = text_bboxes["移民项目"]
+        x0, y0, x1, y1 = bbox
+        max_w_prog = date_grp_x - x0
+        font = _fit_font(bar_program, max_w_prog, y1 - y0, WECHAT_BAR_PROGRAM_FONT_SIZE)
+        _draw_text_over(canvas, bbox, bar_program, font, None, autofit=False)
+
+    # Restore label/decorator regions on top.
+    # 移民项目: restore up to prog_val_x0 (label + slash, capped at value x0).
+    # 获批时间: starts at date_grp_x (dynamic per template).
+    for bx0, by0, bx1, by1 in (
+        (191,        1817, 539,          1925),
+        (983,        1812, prog_val_x0,  1928),
+        (date_grp_x, 1807, 2365,        1924),
+    ):
+        if bx1 > bx0:
+            canvas.paste(label_composite.crop((bx0, by0, bx1, by1)), (bx0, by0))
+
+    # Draw 签证捷报 over the (now-empty) title area for VISA_PROGRAMS
+    if title_bbox_wechat:
+        font_title = _fit_font("签证捷报", title_bbox_wechat[2] - title_bbox_wechat[0],
+                               title_bbox_wechat[3] - title_bbox_wechat[1], 600)
+        _draw_text_over(canvas, title_bbox_wechat, "签证捷报", font_title, None, autofit=False)
 
     if frame_bbox:
         _paste_letter(canvas, frame_bbox, letter_image, watermark, watermark_bbox)
@@ -228,26 +336,52 @@ def build_xhs_poster(
 
     frame_bbox = _find_frame_bbox(psd)
 
-    # Find the title TypeLayer ("移民捷报")
+    # Find and HIDE the title TypeLayer before compositing so we draw fresh text
+    # on top of the untouched decorative background (no fill needed).
+    title_layer = None
     title_bbox = None
     for layer in psd.descendants():
         if isinstance(layer, TypeLayer) and layer.text in ("移民捷报", "签证捷报"):
+            title_layer = layer
             title_bbox = layer.bbox
+            layer.visible = False
             break
 
     canvas = psd.composite()
+    # Keep a copy so we can restore decorative elements covered by letter paste.
+    canvas_before_letter = canvas.copy()
 
-    # Get watermark from 朋友圈 PSD and scale it to fit the 小红书 frame
-    wm_img, wm_bbox = _get_standalone_watermark()
+    # Scale the 朋友圈 watermark to fit the 小红书 frame proportionally.
+    # In 朋友圈: frame_w=2824, wm placed at x_off=390 (frac 0.138), y_off=1135 (frac 0.272),
+    # wm_w=2293 (frac 0.812 of frame_w). Apply same fractions to 小红书 frame.
+    wm_img, _ = _get_standalone_watermark()
+    if frame_bbox and wm_img:
+        fx0, fy0, fx1, fy1 = frame_bbox
+        fw, fh = fx1 - fx0, fy1 - fy0
+        wm_scaled_w = int(fw * 0.812)
+        wm_scaled_h = int(wm_img.height * wm_scaled_w / wm_img.width)
+        wm_scaled = wm_img.resize((wm_scaled_w, wm_scaled_h), Image.LANCZOS)
+        wm_dest_x = fx0 + int(fw * 0.138)
+        wm_dest_y = fy0 + int(fh * 0.272)
+        xhs_wm_bbox = (wm_dest_x, wm_dest_y,
+                       wm_dest_x + wm_scaled_w, wm_dest_y + wm_scaled_h)
+        _paste_letter(canvas, frame_bbox, letter_image, wm_scaled, xhs_wm_bbox)
+    elif frame_bbox:
+        _paste_letter(canvas, frame_bbox, letter_image, None, None)
 
-    # Paste letter with watermark
-    if frame_bbox:
-        _paste_letter(canvas, frame_bbox, letter_image, wm_img, wm_bbox)
+    # Restore decorative elements the letter paste may have whited out.
+    # Title background decorations and bottom-left squares are inside the frame and get erased.
+    XHS_DECORATIONS = [
+        (570, 217, 1249, 487),   # title area: 3 colored rectangles + right accent
+        (92, 1561, 189, 1661),   # bottom-left red/dark-red squares
+    ]
+    for bx0, by0, bx1, by1 in XHS_DECORATIONS:
+        canvas.paste(canvas_before_letter.crop((bx0, by0, bx1, by1)), (bx0, by0))
 
-    # Overwrite title with correct wording
+    # Draw title text on the restored background (no fill needed — background is intact).
     if title_bbox:
         title_text = "签证捷报" if program_name in VISA_PROGRAMS else "移民捷报"
         font = ImageFont.truetype(str(FONT_PATH), XHS_FONT_SIZE)
-        _draw_text_over(canvas, title_bbox, title_text, font, XHS_TITLE_BG_COLOR, autofit=True)
+        _draw_text_over(canvas, title_bbox, title_text, font, None, autofit=True)
 
     return canvas
