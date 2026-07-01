@@ -31,7 +31,7 @@ _FLAG_TARGET_Y = 90    # flag top edge from frame top
 _FLAG_TARGET_H = 59    # flag bounding-box height (drives letter scale)
 
 # Programs whose poster title should read "签证捷报" instead of "移民捷报"
-VISA_PROGRAMS = {"境内学签", "境外学签", "境外工签", "境内工签"}
+VISA_PROGRAMS = {"境内学签", "境外学签", "境外工签", "境内工签", "澳洲签证"}
 
 # Display text overrides for the 移民项目 info bar slot.
 # U+3000 (ideographic space) is used for 省提名 so it renders at the same
