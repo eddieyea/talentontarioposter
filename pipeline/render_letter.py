@@ -1,9 +1,5 @@
 import json
-import numpy as np
 from pathlib import Path
-
-import fitz
-from PIL import Image, ImageDraw
 
 PII_CONFIG = Path(__file__).parent.parent / "config" / "pii_regions.json"
 MASK_COLOR = (232, 232, 232)  # #E8E8E8 light grey (matched to reference)
@@ -12,8 +8,9 @@ MASK_COLOR = (232, 232, 232)  # #E8E8E8 light grey (matched to reference)
 FLAG_TOP_MARGIN_PX = 57  # at 300 DPI: flag lands 57px from top of cropped image
 
 
-def _find_flag_top(img: Image.Image) -> int:
+def _find_flag_top(img):
     """Find the top-most row containing Canada flag red pixels in the top half of the image."""
+    import numpy as np
     arr = np.array(img)
     half = arr.shape[0] // 2
     area = arr[:half, :img.width // 2]  # top-left quadrant only
@@ -22,8 +19,11 @@ def _find_flag_top(img: Image.Image) -> int:
     return int(ys[0]) if len(ys) else 0
 
 
-def render_and_mask(pdf_path: str, dpi: int = 300) -> Image.Image:
+def render_and_mask(pdf_path: str, dpi: int = 300):
     """Render page 1, mask PII, and crop top white space so Canada flag is near top."""
+    import fitz
+    from PIL import Image, ImageDraw
+
     doc = fitz.open(pdf_path)
     page = doc[0]
 

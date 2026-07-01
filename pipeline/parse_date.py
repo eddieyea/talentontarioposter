@@ -1,9 +1,9 @@
 import re
-import fitz
 
 
 def extract_issue_date(pdf_path: str) -> str:
     """Return the letter date as YYYY-MM-DD, or empty string if not found."""
+    import fitz
     doc = fitz.open(pdf_path)
     text = doc[0].get_text()
     doc.close()

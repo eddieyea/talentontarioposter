@@ -5,10 +5,7 @@ build_poster()     → 朋友圈 vertical poster (per-program PSD)
 build_xhs_poster() → 小红书 square poster (single shared template)
 """
 from pathlib import Path
-import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from psd_tools import PSDImage
-from psd_tools.api.layers import TypeLayer
 
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates_psd"
 ASSETS_DIR = Path(__file__).parent.parent / "assets"
@@ -57,6 +54,7 @@ WECHAT_BAR_PROGRAM_FONT_SIZE = 129
 
 def _find_group_left_x(psd, group_name: str):
     """Return the leftmost x of any non-value child layer inside the named group."""
+    from psd_tools.api.layers import TypeLayer
     def walk(layers):
         for layer in layers:
             if layer.name == group_name and hasattr(layer, '__iter__'):
@@ -77,6 +75,7 @@ def _find_group_left_x(psd, group_name: str):
 
 def _collect_text_layers(psd) -> dict:
     """Return first-occurrence bboxes for 客户姓名 / 移民项目 / 获批时间 groups."""
+    from psd_tools.api.layers import TypeLayer
     results = {}
     target_groups = {"客户姓名", "移民项目", "获批时间"}
 
@@ -119,6 +118,7 @@ def _find_watermark_layer(psd):
 
 def _find_flag_in_letter(letter: Image.Image):
     """Return (y_top, x_left, height) of the Canada maple-leaf flag red pixels in the letter."""
+    import numpy as np
     arr = np.array(letter)
     # Search only top-left quadrant — the flag is always top-left in IRCC letters
     roi = arr[:letter.height // 4, :letter.width // 4]
@@ -221,6 +221,7 @@ def _hide_value_layers(psd):
     '获批时间' whose text differs from the group name (i.e. they are value layers,
     not label layers).  All other TypeLayers (title, footer, etc.) are left alone.
     """
+    from psd_tools.api.layers import TypeLayer
     INFO_BAR_GROUPS = {"客户姓名", "移民项目", "获批时间"}
 
     def walk(layers):
@@ -242,6 +243,8 @@ def build_poster(
     approved_date: str,
     letter_image: Image.Image,
 ) -> Image.Image:
+    from psd_tools import PSDImage
+    from psd_tools.api.layers import TypeLayer
     psd = PSDImage.open(str(TEMPLATES_DIR / psd_filename))
 
     text_bboxes = _collect_text_layers(psd)
@@ -324,6 +327,7 @@ _WATERMARK_SOURCE_PSD = "境内学签.psd"
 
 def _get_standalone_watermark():
     """Extract watermark layer from a 朋友圈 PSD and return (image, bbox)."""
+    from psd_tools import PSDImage
     psd = PSDImage.open(str(TEMPLATES_DIR / _WATERMARK_SOURCE_PSD))
     return _find_watermark_layer(psd)
 
@@ -332,6 +336,8 @@ def build_xhs_poster(
     program_name: str,
     letter_image: Image.Image,
 ) -> Image.Image:
+    from psd_tools import PSDImage
+    from psd_tools.api.layers import TypeLayer
     psd = PSDImage.open(str(TEMPLATES_DIR / XHS_TEMPLATE))
 
     frame_bbox = _find_frame_bbox(psd)
